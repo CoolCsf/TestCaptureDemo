@@ -1,8 +1,10 @@
 package com.coolcsf.testcapturedemo
 
 import android.app.Activity
+import android.graphics.ImageFormat
 import android.hardware.Camera
 import android.util.Log
+import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.widget.Toast
@@ -21,9 +23,9 @@ class CameraHelper(private val activity: Activity, private val surfaceView: Surf
     private val queuedBuffers: MutableSet<ByteArray> = HashSet()
     var mCallBack: ((data: ByteArray?) -> Unit)? = null
     override fun onPreviewFrame(data: ByteArray?, camera: Camera?) {
-//        if (!queuedBuffers.contains(data)) {
-//            return
-//        }
+        if (!queuedBuffers.contains(data)) {
+            return
+        }
         mCallBack?.invoke(data)
         camera?.addCallbackBuffer(data)
     }
@@ -57,7 +59,8 @@ class CameraHelper(private val activity: Activity, private val surfaceView: Surf
         mCamera = openCamera()
         mCamera?.let {
             initParameters(it)
-            it.setPreviewCallback(this@CameraHelper)
+            createPool()
+            it.setPreviewCallbackWithBuffer(this@CameraHelper)
             startPreView()
         } ?: Toast.makeText(activity, "无法打开相机", Toast.LENGTH_SHORT).show()
     }
@@ -118,34 +121,33 @@ class CameraHelper(private val activity: Activity, private val surfaceView: Surf
     }
 
     private fun setCameraDisplayOrientation() {
-        val mCamInfo = Camera.CameraInfo()
-        var result: Int
-        if (mCamInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            result = mCamInfo.orientation % 360
-            result = (360 - result) % 360 // compensate the mirror
-        } else { // back-facing
-            result = (mCamInfo.orientation + 360) % 360
+//        val mCamInfo = Camera.CameraInfo()
+//        var result: Int
+//        if (mCamInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+//            result = mCamInfo.orientation % 360
+//            result = (360 - result) % 360 // compensate the mirror
+//        } else { // back-facing
+//            result = (mCamInfo.orientation + 360) % 360
+//        }
+//        // 设置预览图像的转方向
+//        mCamera?.setDisplayOrientation(result)
+        var mDisplayOrientation=0
+        val info = Camera.CameraInfo()
+        Camera.getCameraInfo(Camera.CameraInfo.CAMERA_FACING_FRONT, info)
+        val rotation = activity.windowManager.defaultDisplay.rotation
+        var screenDegree = 0
+        when (rotation) {
+            Surface.ROTATION_0 -> screenDegree = 0
+            Surface.ROTATION_90 -> screenDegree = 90
+            Surface.ROTATION_180 -> screenDegree = 180
+            Surface.ROTATION_270 -> screenDegree = 270
         }
-        // 设置预览图像的转方向
-        mCamera?.setDisplayOrientation(result)
-//        val info = Camera.CameraInfo()
-//        Camera.getCameraInfo(mCameraFacing, info)
-//        val rotation = MApplication.instance.windowManager.defaultDisplay.rotation
-//        var screenDegree = 0
-//        when (rotation) {
-//            Surface.ROTATION_0 -> screenDegree = 0
-//            Surface.ROTATION_90 -> screenDegree = 90
-//            Surface.ROTATION_180 -> screenDegree = 180
-//            Surface.ROTATION_270 -> screenDegree = 270
-//        }
-//        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-//            mDisplayOrientation = (info.orientation + screenDegree) % 360
-//            mDisplayOrientation =
-//                (360 - mDisplayOrientation) % 360          // compensate the mirror
-//        } else {
-//            mDisplayOrientation = (info.orientation - screenDegree + 360) % 360
-//        }
-//        mCamera?.setDisplayOrientation(mDisplayOrientation)
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            mDisplayOrientation = (info.orientation + screenDegree) % 360
+            mDisplayOrientation =
+                (360 - mDisplayOrientation) % 360          // compensate the mirror
+        }
+        mCamera?.setDisplayOrientation(mDisplayOrientation)
     }
 
     //获取与指定宽高相等或最接近的尺寸

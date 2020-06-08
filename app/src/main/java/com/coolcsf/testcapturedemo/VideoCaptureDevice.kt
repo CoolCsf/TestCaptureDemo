@@ -11,7 +11,6 @@ import com.zego.zegoavkit2.ZegoVideoCaptureDevice
 import java.nio.ByteBuffer
 import java.util.*
 import java.util.concurrent.TimeUnit
-import kotlin.math.ceil
 
 class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() {
     private var mAVCEncoder: AVCEncoder? = null
@@ -21,14 +20,19 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
     private val queuedBuffers: MutableSet<ByteArray> = HashSet()
     private var mCam: Camera? = null
     private var mCamInfo: CameraInfo? = null
+
     // 默认为后置摄像头
     private var mFront = 0
+
     // 预设分辨率宽
     private var mWidth = 640
+
     // 预设分辨率高
     private var mHeight = 480
+
     // 预设采集帧率
     private var mFrameRate = 15
+
     // 默认不旋转
     private var mRotation = 0
 
@@ -49,7 +53,7 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
     }
 
     override fun setCaptureRotation(p0: Int): Int {
-        return 0
+        return 90
     }
 
     override fun startPreview(): Int {
@@ -120,7 +124,7 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
             }
             // 将NV21格式的视频数据转为I420格式的
             val i420bytes =
-                YV12toYUV420PackedSemiPlanar(
+                NV21ToI420(
                     data!!,
                     cameraHelper!!.mWidth,
                     cameraHelper!!.mHeight
@@ -193,32 +197,23 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
 //        }
 //        return ret
 //    }
-    private fun YV12toYUV420PackedSemiPlanar(
-        input: ByteArray,
-        width: Int,
-        height: Int
-    ): ByteArray? {
-        val yStride = ceil((width / 16.0f).toDouble()).toInt() * 16
-        val cStride = ceil((width / 32.0f).toDouble()).toInt() * 16
-        val ySize = yStride * height
-        val cSize = cStride * height / 2
-        val output = ByteArray(width * height * 3 / 2)
-        for (i in 0 until height) System.arraycopy(
-            input,
-            yStride * i,
-            output,
-            yStride * i,
-            yStride
-        ) // Y
-        for (i in 0 until height / 2) {
-            for (j in 0 until width / 2) {
-                output[ySize + (i * width / 2 + j) * 2] =
-                    input[ySize + cSize + i * cStride + j] // Cb (U)
-                output[ySize + (i * height / 2 + j) * 2 + 1] =
-                    input[ySize + i * cStride + j] // Cr (V)
-            }
+
+    // camera采集的是NV21格式的数据，编码器需要I420格式的数据，此处进行一个格式转换
+    private fun NV21ToI420(data: ByteArray, width: Int, height: Int): ByteArray? {
+        val ret = ByteArray(width * height * 3 / 2)
+        val total = width * height
+        val bufferY = ByteBuffer.wrap(ret, 0, total)
+        val bufferV = ByteBuffer.wrap(ret, total, total / 4)
+        val bufferU =
+            ByteBuffer.wrap(ret, total + total / 4, total / 4)
+        bufferY.put(data, 7, total)
+        var i = total + 7
+        while (i < data.size) {
+            bufferV.put(data[i])
+            bufferU.put(data[i + 1])
+            i += 2
         }
-        return output
+        return ret
     }
 
     override fun takeSnapshot(): Int {
