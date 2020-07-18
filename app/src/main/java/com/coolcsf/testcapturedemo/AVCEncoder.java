@@ -14,16 +14,10 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 
-/**
- * AVCEncoder
- * AVCANNEXB 模式编码器
- * 此类的作用是编码采集的视频数据
- * 开发者可参考该类的代码实现编码视频数据
- */
 @TargetApi(23)
 public class AVCEncoder {
 
-    private final static String TAG = "Zego";
+    private final static String TAG = "AVCEncoder";
     private final static int CONFIGURE_FLAG_ENCODE = MediaCodec.CONFIGURE_FLAG_ENCODE;
 
     // 音视频编解码器组件
@@ -36,13 +30,19 @@ public class AVCEncoder {
     private int mViewHeight;
 
     private ByteBuffer configData = ByteBuffer.allocateDirect(1);
+    private final static int BIT_RATE = 600000;
+    private final static int FRAME_RATE = 15;
+    private final static int I_FRAME_INTERVAL = 5;
+    private int bitRate = BIT_RATE;
+    private int frameRate = FRAME_RATE;
+    private int iFrameInterval = I_FRAME_INTERVAL;
 
     /**
      * 视频数据信息结构体
      * 包含时间戳，视频数据，关键帧标记
      */
     static class TransferInfo {
-        public long timeStmp;
+        public long time;
         public byte[] inOutData;
         public boolean isKeyFrame;
     }
@@ -54,21 +54,16 @@ public class AVCEncoder {
 
     // 编码器回调
     private MediaCodec.Callback mCallback = new MediaCodec.Callback() {
-        // 输入缓冲区回调，等待输入
         @Override
         public void onInputBufferAvailable(MediaCodec mediaCodec, int inputBufferId) {
             try {
                 ByteBuffer inputBuffer = mediaCodec.getInputBuffer(inputBufferId);
                 inputBuffer.clear();
-
                 // 从待编码视频数据队列取数据
                 TransferInfo transferInfo = mInputDatasQueue.poll();
-
                 if (transferInfo != null) {
-                    // 将视频帧数据写入MediaCodec的buffer中
                     inputBuffer.put(transferInfo.inOutData, 0, transferInfo.inOutData.length);
-                    // 视频帧数据入MediaCodec队列，等待编码，需要传递线性递增的时间戳
-                    mediaCodec.queueInputBuffer(inputBufferId, 0, transferInfo.inOutData.length, transferInfo.timeStmp * 1000, 0);
+                    mediaCodec.queueInputBuffer(inputBufferId, 0, transferInfo.inOutData.length, transferInfo.time * 1000, 0);
                 } else {
                     long now = 0;
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
@@ -90,23 +85,13 @@ public class AVCEncoder {
          */
         @Override
         public void onOutputBufferAvailable(MediaCodec mediaCodec, int outputBufferId, MediaCodec.BufferInfo bufferInfo) {
-            // 根据buffer索引获取MediaCodec的输出缓冲区buffer地址
             ByteBuffer outputBuffer = mMediaCodec.getOutputBuffer(outputBufferId);
-            MediaFormat outputFormat = mMediaCodec.getOutputFormat(outputBufferId);
-
-            // 关键帧buffer
             ByteBuffer keyFrameBuffer;
-
             if (outputBuffer != null && bufferInfo.size > 0) {
                 TransferInfo transferInfo = new TransferInfo();
-                transferInfo.timeStmp = bufferInfo.presentationTimeUs / 1000;
-
-                // 判断是否为 Codec-specific Data，从OutputBuffer中获取csd参数
+                transferInfo.time = bufferInfo.presentationTimeUs / 1000;
                 boolean isConfigFrame = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0;
                 if (isConfigFrame) {
-                    Log.d(TAG, "Config frame generated. Offset: " + bufferInfo.offset +
-                            ", Size: " + bufferInfo.size + ", num: " + (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG));
-
                     outputBuffer.position(bufferInfo.offset);
                     outputBuffer.limit(bufferInfo.offset + bufferInfo.size);
                     if (configData.capacity() < bufferInfo.size) {
@@ -119,11 +104,6 @@ public class AVCEncoder {
                 // 判断是否为关键帧
                 boolean isKeyFrame = (bufferInfo.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
                 if (isKeyFrame) {
-
-                    Log.d(TAG, "Appending config frame of size " + configData.capacity() +
-                            " to output buffer with offset " + bufferInfo.offset + ", size " +
-                            bufferInfo.size);
-                    // For H.264 key frame append SPS and PPS NALs at the start
                     keyFrameBuffer = ByteBuffer.allocateDirect(
                             configData.capacity() + bufferInfo.size);
                     configData.rewind();
@@ -139,22 +119,14 @@ public class AVCEncoder {
                     transferInfo.isKeyFrame = true;
 
                 } else {
-
                     byte[] buffer = new byte[outputBuffer.remaining()];
                     outputBuffer.get(buffer);
 
                     transferInfo.inOutData = buffer;
                     transferInfo.isKeyFrame = false;
                 }
-
-                // 将编码后的数据存入已编码视频数据队列
                 boolean result = mOutputDatasQueue.offer(transferInfo);
-
-                if (!result) {
-                    Log.e(TAG, "encoder offer to queue failed, queue in full state");
-                }
             }
-            // 处理完成，释放ByteBuffer数据，此处不用MediaCodec的渲染功能
             mMediaCodec.releaseOutputBuffer(outputBufferId, false);
         }
 
@@ -200,24 +172,31 @@ public class AVCEncoder {
             MediaCodecInfo.CodecCapabilities capabilities = codecInfo.getCapabilitiesForType("video/avc");
             for (int i = 0; i < capabilities.colorFormats.length && colorFormat == 0; i++) {
                 int format = capabilities.colorFormats[i];
-                switch (format) {
-                    //support color formats
-                    case MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar:    /*I420 --- YUV4:2:0 --- Nvidia Tegra 3, Samsu */
-                        colorFormat = format;
-                        break;
-                    default:
-                        Log.d("Zego", " AVCEncoder unsupported color format " + format);
-                        break;
+                //support color formats
+                if (format == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar) {    /*I420 --- YUV4:2:0 --- Nvidia Tegra 3, Samsu */
+                    colorFormat = format;
+                } else {
+                    Log.d("Zego", " AVCEncoder unsupported color format " + format);
                 }
             }
-            if (colorFormat != 0) {
-                isSupport = true;
-            } else {
-                isSupport = false;
-            }
+            isSupport = colorFormat != 0;
         }
 
         return isSupport;
+    }
+
+    public void setBitRateParam(int bitrate) {
+        bitRate = bitrate;
+        iFrameInterval = 15;
+        setMediaFormat(bitRate, frameRate, iFrameInterval);
+        mMediaCodec.stop();
+        configData.clear();
+        try {
+            mMediaCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        startEncoder();
     }
 
     /**
@@ -241,20 +220,23 @@ public class AVCEncoder {
         this.mViewHeight = viewheight;
 
         // 设置MediaFormat，必须设置 KEY_COLOR_FORMAT，KEY_BIT_RATE，KEY_FRAME_RATE，KEY_I_FRAME_INTERVAL的值
-        mMediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, mViewWidth, mViewHeight);
-        mMediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar); //COLOR_FormatYUV420PackedSemiPlanar
-        mMediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 4000);
-        mMediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 15);
-        mMediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5);
+        setMediaFormat(bitRate, frameRate, iFrameInterval);
+    }
+
+    private void setMediaFormat(int bitRate, int frameRate, int iFrameInterval) {
+        mMediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, mViewHeight, mViewWidth);
+        mMediaFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar); //COLOR_FormatYUV420PackedSemiPlanar
+        mMediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, bitRate);
+        mMediaFormat.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate);
+        mMediaFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, iFrameInterval);
     }
 
     // 为编码器提供视频帧数据，需要 I420 格式的数据
     public void inputFrameToEncoder(byte[] needEncodeData, long timeStmp) {
-
         if (needEncodeData != null) {
             TransferInfo transferInfo = new TransferInfo();
             transferInfo.inOutData = needEncodeData;
-            transferInfo.timeStmp = timeStmp;
+            transferInfo.time = timeStmp;
             boolean inputResult = mInputDatasQueue.offer(transferInfo);
             if (!inputResult) {
                 Log.d(TAG, "inputEncoder queue result = " + inputResult + " queue current size = " + mInputDatasQueue.size());

@@ -14,7 +14,24 @@ class VideoCaptureFactory(val activity: MainActivity) : ZegoVideoCaptureFactory(
         device = null
     }
 
-    override fun create(p0: String?): ZegoVideoCaptureDevice? {
+    fun throwI(isLow: Boolean) {
+        device?.throwI = isLow
+    }
+
+    fun throwP(isLow: Boolean) {
+        device?.throwP = isLow
+    }
+
+    fun setLostFrame(fps: Int) {
+        device?.setLostFrame(fps)
+    }
+
+    fun setBitRate(bitRate: Int) {
+        device?.setBitRate(bitRate)
+    }
+
+    override
+    fun create(p0: String?): ZegoVideoCaptureDevice? {
         return device
     }
 }

@@ -8,27 +8,28 @@
 
     <SurfaceView
         android:id="@+id/tv_bg"
-        android:layout_width="150dp"
-        android:layout_height="150dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_constraintBottom_toTopOf="@id/tv_play"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
     <TextureView
         android:id="@+id/tv_play"
         android:layout_width="150dp"
-        android:layout_height="150dp"
-        android:layout_marginLeft="10dp"
-        app:layout_constraintLeft_toRightOf="@id/tv_bg"
+        android:layout_height="300dp"
+        app:layout_constraintRight_toRightOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
     <Button
         android:id="@+id/btn_start_capture"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="开始"
         android:enabled="false"
+        android:text="开始"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
     <Button
         android:id="@+id/btn_start_playing"
         android:layout_width="wrap_content"
@@ -36,4 +37,81 @@
         android:text="拉流"
         app:layout_constraintLeft_toRightOf="@id/btn_start_capture"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <Button
+        android:id="@+id/btn_start_throwI"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="丢I帧"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/btn_start_playing" />
+
+    <Button
+        android:id="@+id/btn_start_throwP"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="丢P帧"
+        app:layout_constraintLeft_toRightOf="@id/btn_start_throwI"
+        app:layout_constraintTop_toTopOf="@id/btn_start_throwI" />
+
+    <Button
+        android:id="@+id/btn_start_no_throw"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="不丢帧"
+        app:layout_constraintLeft_toRightOf="@id/btn_start_throwP"
+        app:layout_constraintTop_toTopOf="@id/btn_start_throwI" />
+
+    <Button
+        android:id="@+id/btn_low_bit_rate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="30k"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toLeftOf="@id/btn_middle_bit_rate"
+        app:layout_constraintTop_toBottomOf="@id/btn_start_no_throw" />
+
+    <Button
+        android:id="@+id/btn_middle_bit_rate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="200k"
+        app:layout_constraintLeft_toRightOf="@id/btn_low_bit_rate"
+        app:layout_constraintRight_toLeftOf="@id/btn_high_bit_rate"
+        app:layout_constraintTop_toTopOf="@id/btn_low_bit_rate" />
+
+    <Button
+        android:id="@+id/btn_high_bit_rate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="400k"
+        app:layout_constraintLeft_toRightOf="@id/btn_middle_bit_rate"
+        app:layout_constraintTop_toTopOf="@id/btn_low_bit_rate" />
+
+    <Button
+        android:id="@+id/btn_low_frame_rate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="低帧"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toLeftOf="@id/btn_high_frame_rate"
+        app:layout_constraintTop_toBottomOf="@id/btn_low_bit_rate" />
+
+    <Button
+        android:id="@+id/btn_high_frame_rate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="高帧"
+        app:layout_constraintLeft_toRightOf="@id/btn_low_frame_rate"
+        app:layout_constraintTop_toTopOf="@id/btn_low_frame_rate" />
+
+    <TextView
+        android:id="@+id/tv_log"
+        android:layout_width="200dp"
+        android:layout_height="300dp"
+        android:padding="10dp"
+        android:visibility="gone"
+        android:textColor="@android:color/white"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent" />
 </androidx.constraintlayout.widget.ConstraintLayout>

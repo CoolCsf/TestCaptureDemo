@@ -1,7 +1,5 @@
 package com.coolcsf.testcapturedemo
 
-import android.hardware.Camera
-import android.hardware.Camera.CameraInfo
 import android.os.Build
 import android.os.SystemClock
 import android.util.Log
@@ -9,20 +7,17 @@ import android.view.SurfaceView
 import android.view.View
 import com.zego.zegoavkit2.ZegoVideoCaptureDevice
 import java.nio.ByteBuffer
-import java.util.*
 import java.util.concurrent.TimeUnit
+
 
 class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() {
     private var mAVCEncoder: AVCEncoder? = null
     private var mEncodedBuffer: ByteBuffer? = null
-    private val TAG = "VideoCaptureDevice"
     private var mClient: Client? = null
-    private val queuedBuffers: MutableSet<ByteArray> = HashSet()
-    private var mCam: Camera? = null
-    private var mCamInfo: CameraInfo? = null
-
-    // 默认为后置摄像头
-    private var mFront = 0
+    var throwI = false
+    var throwP = false
+    var preIsI = false
+    var numOfP = 0
 
     // 预设分辨率宽
     private var mWidth = 640
@@ -30,13 +25,8 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
     // 预设分辨率高
     private var mHeight = 480
 
-    // 预设采集帧率
-    private var mFrameRate = 15
-
-    // 默认不旋转
-    private var mRotation = 0
-
     override fun stopCapture(): Int {
+        cameraHelper?.releaseCamera()
         return 0
     }
 
@@ -53,7 +43,7 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
     }
 
     override fun setCaptureRotation(p0: Int): Int {
-        return 90
+        return 0
     }
 
     override fun startPreview(): Int {
@@ -108,7 +98,6 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
                 Log.e("Zego", "This demo don't support color formats other than I420.")
             }
         }
-//        mAVCEncoder?.init(cameraHelper!!.mWidth,cameraHelper!!.mHeight,15,4000000)
         if (mAVCEncoder != null) { // 编码器相关信息
             val config = VideoCodecConfig()
             // Android端的编码类型必须选用 ZegoVideoCodecTypeAVCANNEXB
@@ -123,18 +112,25 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
                 TimeUnit.MILLISECONDS.toNanos(SystemClock.elapsedRealtime())
             }
             // 将NV21格式的视频数据转为I420格式的
-            val i420bytes =
-                NV21ToI420(
-                    data!!,
-                    cameraHelper!!.mWidth,
-                    cameraHelper!!.mHeight
-                )
+            val i420bytes = nv21Toi420(data!!, cameraHelper!!.mWidth, cameraHelper!!.mHeight)
             // 为编码器提供视频帧数据和时间戳
             mAVCEncoder?.inputFrameToEncoder(i420bytes, now)
             // 取编码后的视频数据，编码未完成时返回null
             val transferInfo = mAVCEncoder?.pollFrameFromEncoder()
             // 编码完成
             if (transferInfo != null) {
+                if (transferInfo.isKeyFrame) {
+                    numOfP = 0
+                } else {
+                    numOfP++
+                }
+                if ((throwI && transferInfo.isKeyFrame)) {
+                    return
+                }
+                if (throwP && !transferInfo.isKeyFrame && (preIsI || numOfP < 30)) { //如果是丢P帧，并且当前不是I帧，并且上一帧是I帧，则当前P帧丢掉，并且开始计数，当一个gop前30个p帧都丢掉
+                    preIsI = false
+                    return
+                }
                 if (mEncodedBuffer != null && transferInfo.inOutData.size > mEncodedBuffer?.capacity() ?: 0) {
                     mEncodedBuffer =
                         ByteBuffer.allocateDirect(transferInfo.inOutData.size)
@@ -148,72 +144,47 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
                     transferInfo.inOutData.size,
                     config,
                     transferInfo.isKeyFrame,
-                    transferInfo.timeStmp.toDouble()
+                    transferInfo.time.toDouble()
                 )
-                // 打印第一次传递编码数据给SDK的时间
-//                if (printCount == 0) {
-//                    val date = Date(System.currentTimeMillis())
-//                    Log.d(
-//                        "Zego",
-//                        "encode data transfer time: " + simpleDateFormat.format(date)
-//                    )
-//                    printCount++
-//                }
+                preIsI = transferInfo.isKeyFrame
             }
         }
     }
 
-    //    // camera采集的是NV21格式的数据，编码器需要I420格式的数据，此处进行一个格式转换
-//    fun NV21ToI420(data: ByteArray?, width: Int, height: Int): ByteArray? {
-//        if (data == null) return null
-//        val ret = ByteArray(width * height * 3 / 2)
-//        val total = width * height
-//        val bufferY = ByteBuffer.wrap(ret, 0, total)
-//        val bufferV = ByteBuffer.wrap(ret, total, total / 4)
-//        val bufferU =
-//            ByteBuffer.wrap(ret, total + total / 4, total / 4)
-//        bufferY.put(data, 7, total)
-//        var i = total + 7
-//        while (i < data.size) {
-//            bufferV.put(data[i])
-//            bufferU.put(data[i + 1])
-//            i += 2
-//        }
-//        return ret
-//    }
-//    private fun NV21ToI420(data:    ByteArray?, width: Int, height: Int): ByteArray? {
-//        if (data == null) return null
-//        val ret = ByteArray(data.size)
-//        val total = width * height
-//        val bufferY = ByteBuffer.wrap(ret, 0, total)
-//        val bufferU = ByteBuffer.wrap(ret, total, total / 4)
-//        val bufferV = ByteBuffer.wrap(ret, total + total / 4, total / 4)
-//        bufferY.put(data, 0, total)
-//        var i = total
-//        while (i < data.size) {
-//            bufferV.put(data[i])
-//            bufferU.put(data[i + 1])
-//            i += 2
-//        }
-//        return ret
-//    }
+    private fun NV21TONV12(nv21: ByteArray, width: Int, height: Int): ByteArray {
+        val nv12 = ByteArray(width * height * 3 / 2)
+        val frameSize = width * height;
+
+        for (i in (0..frameSize)) {
+            nv12[i] = nv21[i]
+        }
+        for (i in (0..frameSize)) {
+            nv12[frameSize + i - 1] = nv21[i + frameSize]
+        }
+        for (i in (0..frameSize)) {
+            nv12[frameSize + i] = nv21[i + frameSize - 1]
+        }
+        return nv12
+    }
 
     // camera采集的是NV21格式的数据，编码器需要I420格式的数据，此处进行一个格式转换
-    private fun NV21ToI420(data: ByteArray, width: Int, height: Int): ByteArray? {
+    private fun nv21Toi420(data: ByteArray, width: Int, height: Int): ByteArray? {
         val ret = ByteArray(width * height * 3 / 2)
         val total = width * height
         val bufferY = ByteBuffer.wrap(ret, 0, total)
         val bufferV = ByteBuffer.wrap(ret, total, total / 4)
         val bufferU =
             ByteBuffer.wrap(ret, total + total / 4, total / 4)
-        bufferY.put(data, 7, total)
-        var i = total + 7
+        bufferY.put(data, 0, total)
+        var i = total + 3
         while (i < data.size) {
             bufferV.put(data[i])
-            bufferU.put(data[i + 1])
+            if (i < data.size - 1) {
+                bufferU.put(data[i + 1])
+            }
             i += 2
         }
-        return ret
+        return ret;
     }
 
     override fun takeSnapshot(): Int {
@@ -229,6 +200,7 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
     }
 
     override fun stopAndDeAllocate() {
+        cameraHelper?.releaseCamera()
     }
 
     override fun setFrameRate(p0: Int): Int {
@@ -241,5 +213,13 @@ class VideoCaptureDevice(val activity: MainActivity) : ZegoVideoCaptureDevice() 
 
     override fun stopPreview(): Int {
         return 0
+    }
+
+    fun setBitRate(bitRate: Int) {
+        mAVCEncoder?.setBitRateParam(bitRate)
+    }
+
+    fun setLostFrame(fps: Int) {
+        cameraHelper?.setLostFrame(fps)
     }
 }

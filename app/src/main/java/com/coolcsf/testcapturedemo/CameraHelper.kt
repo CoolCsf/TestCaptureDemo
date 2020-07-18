@@ -11,50 +11,79 @@ import android.widget.Toast
 import java.nio.ByteBuffer
 import java.util.*
 import kotlin.math.abs
+import kotlin.math.max
 
 class CameraHelper(private val activity: Activity, private val surfaceView: SurfaceView) :
     Camera.PreviewCallback {
     private var mCamera: Camera? = null
-    private var mParameters: Camera.Parameters? = null
     private var mSurfaceHolder: SurfaceHolder = surfaceView.holder
     var mWidth = 640
+    private var MAX_FPS = 1 //视频通话控制在15帧是足够的
+    private var FRAME_PERIOD = 1000 / MAX_FPS // the frame period
+    private var lastTime: Long = 0
+    private var timeDiff: Long = 0
+    private var framesSkipped = 0 // number of frames being skipped
+    private var framesRecevied = 0 // number of frames being skipped
+    private var framesSended = 0 // number of frames being skipped
+
     // 预设分辨率高
     var mHeight = 480
     private val queuedBuffers: MutableSet<ByteArray> = HashSet()
     var mCallBack: ((data: ByteArray?) -> Unit)? = null
     override fun onPreviewFrame(data: ByteArray?, camera: Camera?) {
-        if (!queuedBuffers.contains(data)) {
+        if (!queuedBuffers.contains(data) || data == null) {
             return
         }
-        mCallBack?.invoke(data)
         camera?.addCallbackBuffer(data)
+        timeDiff = System.currentTimeMillis() - lastTime
+        framesRecevied++
+        if (timeDiff < FRAME_PERIOD) {
+            framesSkipped++
+            mCallBack?.invoke(rotateYUVDegree270AndMirror(data, mWidth, mHeight))
+            Log.d(
+                "cameraHelper",
+                "framesSkipped:$framesSkipped,framesRecevied:$framesRecevied, framesSended:$framesSended"
+            )
+            return
+        }
+        lastTime = System.currentTimeMillis();
+        framesSended++;
     }
 
-    //    init {
-//        mSurfaceHolder.addCallback(object : SurfaceHolder.Callback {
-//            override fun surfaceChanged(
-//                holder: SurfaceHolder?,
-//                format: Int,
-//                width: Int,
-//                height: Int
-//            ) {
-//
-//            }
-//
-//            override fun surfaceDestroyed(holder: SurfaceHolder?) {
-//                releaseCamera()
-//            }
-//
-//            override fun surfaceCreated(holder: SurfaceHolder?) {
-//                mCamera = openCamera()
-//                mCamera?.let {
-//                    initParameters(it)
-//                    it.setPreviewCallbackWithBuffer(this@CameraHelper)
-//                    startPreView()
-//                } ?: Toast.makeText(activity, "无法打开相机", Toast.LENGTH_SHORT).show()
-//            }
-//        })
-//    }
+    private fun rotateYUVDegree270AndMirror(
+        data: ByteArray,
+        imageWidth: Int,
+        imageHeight: Int
+    ): ByteArray? {
+        val yuv = ByteArray(imageWidth * imageHeight * 3 / 2)
+        // Rotate and mirror the Y luma
+        var i = 0
+        var maxY = 0
+        for (x in imageWidth - 1 downTo 0) {
+            maxY = imageWidth * (imageHeight - 1) + x * 2
+            for (y in 0 until imageHeight) {
+                yuv[i] = data[maxY - (y * imageWidth + x)]
+                i++
+            }
+        }
+        // Rotate and mirror the U and V color components
+        val uvSize = imageWidth * imageHeight
+        i = uvSize
+        var maxUV = 0
+        var x = imageWidth - 1
+        while (x > 0) {
+            maxUV = imageWidth * (imageHeight / 2 - 1) + x * 2 + uvSize
+            for (y in 0 until imageHeight / 2) {
+                yuv[i] = data[maxUV - 2 - (y * imageWidth + x - 1)]
+                i++
+                yuv[i] = data[maxUV - (y * imageWidth + x)]
+                i++
+            }
+            x -= 2
+        }
+        return yuv
+    }
+
     fun creteCamera() {
         mCamera = openCamera()
         mCamera?.let {
@@ -66,25 +95,14 @@ class CameraHelper(private val activity: Activity, private val surfaceView: Surf
     }
 
     private fun initParameters(camera: Camera) {
-//        mParameters = camera.parameters?.apply {
-//            this.previewFormat = ImageFormat.YV12
-//        }?.let { parameter ->
-//            getBestSize(
-//                mWidth,
-//                mHeight,
-//                parameter.supportedPreviewSizes
-//            )?.let {
-//                parameter.setPreviewSize(mWidth, mHeight)
-//            }
-//            parameter
-//        }
         val param = camera.parameters
-        // hardcode
-        val psz: Camera.Size = camera.Size(640, 480)
+        val psz: Camera.Size = camera.Size(mWidth, mHeight)
         // 设置camera的采集视图size
         param.setPreviewSize(psz.width, psz.height)
         mWidth = psz.width
         mHeight = psz.height
+        param.previewFormat = ImageFormat.NV21
+        param.pictureFormat = ImageFormat.NV21
         camera.parameters = param
         val actParma = camera.parameters
         mWidth = actParma.previewSize.width
@@ -100,7 +118,7 @@ class CameraHelper(private val activity: Activity, private val surfaceView: Surf
         }
     }
 
-    fun startPreView() {
+    private fun startPreView() {
         mCamera?.let {
             it.setPreviewDisplay(mSurfaceHolder)
             setCameraDisplayOrientation()
@@ -121,17 +139,7 @@ class CameraHelper(private val activity: Activity, private val surfaceView: Surf
     }
 
     private fun setCameraDisplayOrientation() {
-//        val mCamInfo = Camera.CameraInfo()
-//        var result: Int
-//        if (mCamInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-//            result = mCamInfo.orientation % 360
-//            result = (360 - result) % 360 // compensate the mirror
-//        } else { // back-facing
-//            result = (mCamInfo.orientation + 360) % 360
-//        }
-//        // 设置预览图像的转方向
-//        mCamera?.setDisplayOrientation(result)
-        var mDisplayOrientation=0
+        var mDisplayOrientation = 0
         val info = Camera.CameraInfo()
         Camera.getCameraInfo(Camera.CameraInfo.CAMERA_FACING_FRONT, info)
         val rotation = activity.windowManager.defaultDisplay.rotation
@@ -150,42 +158,16 @@ class CameraHelper(private val activity: Activity, private val surfaceView: Surf
         mCamera?.setDisplayOrientation(mDisplayOrientation)
     }
 
-    //获取与指定宽高相等或最接近的尺寸
-    private fun getBestSize(
-        targetWidth: Int,
-        targetHeight: Int,
-        sizeList: List<Camera.Size>
-    ): Camera.Size? {
-        var bestSize: Camera.Size? = null
-        val targetRatio = (targetHeight.toDouble() / targetWidth)  //目标大小的宽高比
-        var minDiff = targetRatio
-
-        for (size in sizeList) {
-            val supportedRatio = (size.width.toDouble() / size.height)
-            Log.d("test", "系统支持的尺寸 : ${size.width} * ${size.height} ,    比例$supportedRatio")
-        }
-
-        for (size in sizeList) {
-            if (size.width == targetHeight && size.height == targetWidth) {
-                bestSize = size
-                break
-            }
-            val supportedRatio = (size.width.toDouble() / size.height)
-            if (abs(supportedRatio - targetRatio) < minDiff) {
-                minDiff = abs(supportedRatio - targetRatio)
-                bestSize = size
-            }
-        }
-        Log.d("test", "目标尺寸 ：$targetWidth * $targetHeight ，   比例  $targetRatio")
-        Log.d("test", "最优尺寸 ：${bestSize?.height} * ${bestSize?.width}")
-        return bestSize
-    }
-
     private fun openCamera(cameraFacing: Int = Camera.CameraInfo.CAMERA_FACING_FRONT): Camera? {
         return supportCameraFacing(cameraFacing).takeIf { it }?.let {
             val camera = Camera.open(cameraFacing)
             camera
         }
+    }
+
+    fun setLostFrame(fps: Int) {
+        MAX_FPS = fps
+        FRAME_PERIOD = 1000 / MAX_FPS
     }
 
     private fun supportCameraFacing(facing: Int): Boolean {
